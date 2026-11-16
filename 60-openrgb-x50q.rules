@@ -1,0 +1,2 @@
+# Allow the logged-in desktop user to access DAS Keyboard X50Q via libusb.
+SUBSYSTEM=="usb", ATTR{idVendor}=="24f0", ATTR{idProduct}=="202b", TAG+="uaccess"
