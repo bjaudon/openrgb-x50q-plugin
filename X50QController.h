@@ -24,7 +24,7 @@ public:
     bool IsSameUSBDevice(libusb_device* device) const;
 
 private:
-    bool SendState();
+    bool SendState(bool force = false);
     bool SendReport(unsigned char opcode, unsigned char chunk, const unsigned char* payload);
     bool SendArray(unsigned char opcode, const unsigned char* data, unsigned int data_size);
 

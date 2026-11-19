@@ -15,12 +15,13 @@ namespace
 constexpr unsigned int kLedSlots = 144;
 constexpr unsigned int kPlaneStride = 144;
 constexpr unsigned int kArrayBytes = 480;
+constexpr unsigned int kModeArrayBytes = 3 * 60;
 constexpr unsigned int kReportSize = 64;
 constexpr unsigned int kPayloadSize = 60;
 constexpr unsigned char kInterface = 2;
 constexpr unsigned char kOutEndpoint = 0x03;
 
-// Sustained direct updates can make the keyboard stop responding to USB
+// Sustained color updates can make the keyboard stop responding to USB
 // lighting writes. Limit traffic while the device's update tolerance is known.
 constexpr auto kMinimumFrameInterval = std::chrono::milliseconds(1000);
 
@@ -49,6 +50,31 @@ std::array<unsigned char, kArrayBytes> MakeColorArray(const X50QController& cont
     }
     return bytes;
 }
+
+std::array<unsigned char, kModeArrayBytes> MakeKeyEffectArray(
+    const X50QController& controller)
+{
+    std::array<unsigned char, kModeArrayBytes> bytes{};
+    if(controller.active_mode < 0 ||
+       static_cast<std::size_t>(controller.active_mode) >= controller.modes.size())
+    {
+        return bytes;
+    }
+
+    const unsigned char selector = static_cast<unsigned char>(
+        controller.modes[controller.active_mode].value);
+    for(const X50QTarget& target : X50Q_TARGETS)
+    {
+        for(unsigned int slot : target.slot_ids)
+        {
+            if(slot < kLedSlots)
+            {
+                bytes[slot] = selector;
+            }
+        }
+    }
+    return bytes;
+}
 }
 
 X50QController::X50QController(libusb_device* device, libusb_device_handle* handle,
@@ -72,12 +98,19 @@ X50QController::X50QController(libusb_device* device, libusb_device_handle* hand
     version = "Unknown";
     serial = "";
 
-    mode direct_mode;
-    direct_mode.name = "Direct";
-    direct_mode.value = 0;
-    direct_mode.flags = MODE_FLAG_HAS_PER_LED_COLOR;
-    direct_mode.color_mode = MODE_COLORS_PER_LED;
-    modes.push_back(direct_mode);
+    const auto add_mode = [this](const char* name, int selector)
+    {
+        mode keyboard_mode;
+        keyboard_mode.name = name;
+        keyboard_mode.value = selector;
+        keyboard_mode.flags = MODE_FLAG_HAS_PER_LED_COLOR;
+        keyboard_mode.color_mode = MODE_COLORS_PER_LED;
+        modes.push_back(keyboard_mode);
+    };
+    add_mode("Direct", 0x00);
+    add_mode("Blink", 0x04);
+    add_mode("Color Cycle", 0x03);
+    add_mode("Breathe", 0x01);
 
     SetupZones();
 }
@@ -163,7 +196,7 @@ void X50QController::UpdateSingleLED(int)
 
 void X50QController::DeviceUpdateMode()
 {
-    SendState();
+    SendState(true);
 }
 
 bool X50QController::SendReport(unsigned char opcode, unsigned char chunk,
@@ -205,7 +238,7 @@ bool X50QController::SendArray(unsigned char opcode, const unsigned char* data,
     return true;
 }
 
-bool X50QController::SendState()
+bool X50QController::SendState(bool force)
 {
     std::lock_guard<std::mutex> lock(usb_mutex);
     if(!usb_handle || modes.empty())
@@ -219,7 +252,7 @@ bool X50QController::SendState()
     }
 
     const auto now = std::chrono::steady_clock::now();
-    if(last_color_update.time_since_epoch().count() != 0 &&
+    if(!force && last_color_update.time_since_epoch().count() != 0 &&
        now - last_color_update < kMinimumFrameInterval)
     {
         return true;
@@ -230,8 +263,8 @@ bool X50QController::SendState()
     last_color_update = now;
 
     unsigned char zero_payload[kPayloadSize] = {};
-    // Captured Q Software direct-mode frames send zero-filled parameter arrays
-    // for opcodes 0x0F and 0x0E. The firmware treats 0x0F as per-key state.
+    // This plugin does not expose Q Software's keydown-effect selector, so
+    // keep its opcode 0x0F and 0x0E parameter arrays zero-filled.
     for(unsigned char chunk = 0; chunk < 3; ++chunk)
     {
         if(!SendReport(0x0F, chunk, zero_payload))
@@ -252,9 +285,11 @@ bool X50QController::SendState()
     {
         return false;
     }
+    const auto key_effect_array = MakeKeyEffectArray(*this);
     for(unsigned char chunk = 0; chunk < 3; ++chunk)
     {
-        if(!SendReport(0x0D, chunk, zero_payload))
+        const unsigned char* payload = key_effect_array.data() + chunk * kPayloadSize;
+        if(!SendReport(0x0D, chunk, payload))
         {
             return false;
         }
