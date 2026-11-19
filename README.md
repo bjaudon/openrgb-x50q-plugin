@@ -18,6 +18,12 @@ USB bus, port path, and device address to keep an attached controller registered
 without reopening its interface on each scan. Each matching keyboard is
 registered as a separate controller.
 
+Controller profiles use a stable USB identity instead of the changing libusb
+device address. The plugin uses the keyboard's USB serial number when available;
+otherwise, it uses the USB port path and VID/PID. Reconnecting or rebooting may
+change the libusb address, but saved color profiles continue to match the
+keyboard.
+
 Color updates are limited to 1 frame per second while validating the captured
 full 25-report update sequence. Faster animation updates previously made the
 keyboard stop responding to USB lighting writes. Mode changes send immediately

@@ -21,7 +21,7 @@ OpenRGBPluginInfo X50QPlugin::GetPluginInfo()
     OpenRGBPluginInfo info;
     info.Name = "DAS Keyboard X50Q";
     info.Description = "Lighting support for the DAS Keyboard X50Q";
-    info.Version = "0.1.0";
+    info.Version = "0.1.1";
     info.Commit = X50Q_PLUGIN_COMMIT;
     info.URL = X50Q_PLUGIN_URL;
     // OpenRGB API 4 expects each Devices tab to use its standard device page.

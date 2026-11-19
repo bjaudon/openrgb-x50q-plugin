@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <iterator>
+#include <sstream>
 #include <thread>
 #include <QDebug>
 
@@ -24,6 +25,45 @@ constexpr unsigned char kOutEndpoint = 0x03;
 // Sustained color updates can make the keyboard stop responding to USB
 // lighting writes. Limit traffic while the device's update tolerance is known.
 constexpr auto kMinimumFrameInterval = std::chrono::milliseconds(1000);
+
+std::string MakeStableLocation(libusb_device* device,
+                               libusb_device_handle* handle,
+                               std::string& serial)
+{
+    libusb_device_descriptor descriptor{};
+    if(libusb_get_device_descriptor(device, &descriptor) == LIBUSB_SUCCESS &&
+       descriptor.iSerialNumber != 0)
+    {
+        unsigned char serial_data[256] = {};
+        const int serial_length = libusb_get_string_descriptor_ascii(
+            handle, descriptor.iSerialNumber, serial_data, sizeof(serial_data));
+        if(serial_length > 0)
+        {
+            serial.assign(reinterpret_cast<char*>(serial_data), serial_length);
+        }
+    }
+
+    std::string location = "USB 24f0:202b";
+    if(!serial.empty())
+    {
+        location += " serial=" + serial;
+        return location;
+    }
+
+    unsigned char ports[8] = {};
+    const int port_count = libusb_get_port_numbers(device, ports, sizeof(ports));
+    if(port_count > 0)
+    {
+        std::ostringstream port_location;
+        port_location << " port";
+        for(int index = 0; index < port_count; ++index)
+        {
+            port_location << (index == 0 ? " " : ".") << static_cast<unsigned int>(ports[index]);
+        }
+        location += port_location.str();
+    }
+    return location;
+}
 
 std::array<unsigned char, kArrayBytes> MakeColorArray(const X50QController& controller)
 {
@@ -93,10 +133,9 @@ X50QController::X50QController(libusb_device* device, libusb_device_handle* hand
     name = "DAS Keyboard X50Q";
     vendor = "Das Keyboard";
     description = "X50 RGB Mechanical Keyboard";
-    location = "USB " + std::to_string(bus_number) + ":" + std::to_string(device_address);
+    location = MakeStableLocation(usb_device, usb_handle, serial);
     type = DEVICE_TYPE_KEYBOARD;
     version = "Unknown";
-    serial = "";
 
     const auto add_mode = [this](const char* name, int selector)
     {
