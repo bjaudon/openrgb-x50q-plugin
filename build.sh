@@ -12,46 +12,71 @@ if [[ -n "$OPENRGB_TAG" && ! "$OPENRGB_TAG" =~ ^(release_[[:alnum:]._-]+|release
 fi
 
 if [[ -z "$OPENRGB_SOURCE" ]]; then
-    if [[ -z "$OPENRGB_TAG" ]]; then
-        printf 'Set OPENRGB_TAG to a GitLab release tag or OPENRGB_SOURCE to a source tree.\n' >&2
-        exit 2
+    # Prefer a distro-prepared source tree from rpmbuild.  This avoids
+    # accidentally building against a different OpenRGB checkout.
+    if [[ -d "$HOME/rpmbuild/BUILD" ]]; then
+        while IFS= read -r candidate; do
+            if [[ -f "$candidate/RGBController/RGBController.cpp" ]]; then
+                OPENRGB_SOURCE="$candidate"
+                break
+            fi
+        done < <(find "$HOME/rpmbuild/BUILD" -maxdepth 2 -type d -name 'OpenRGB-*' -print 2>/dev/null)
     fi
 
-    source_cache="$SCRIPT_DIR/build/openrgb-source"
-    source_dir="$source_cache/OpenRGB-$OPENRGB_TAG"
-    archive="$source_cache/OpenRGB-$OPENRGB_TAG.tar.gz"
-    mkdir -p "$source_cache"
-
-    if [[ ! -f "$archive" ]]; then
-        if ! command -v curl >/dev/null 2>&1; then
-            printf 'curl is required to download the OpenRGB release source.\n' >&2
-            exit 2
-        fi
-        curl --fail --location --retry 3 \
-            --output "$archive.part" \
-            "https://gitlab.com/CalcProgrammer1/OpenRGB/-/archive/$OPENRGB_TAG/OpenRGB-$OPENRGB_TAG.tar.gz"
-        mv "$archive.part" "$archive"
+    # Fall back to a source tree already prepared in this project.
+    if [[ -z "$OPENRGB_SOURCE" ]]; then
+        for candidate in "$SCRIPT_DIR"/build/openrgb-source/OpenRGB-*; do
+            if [[ -f "$candidate/RGBController/RGBController.cpp" ]]; then
+                OPENRGB_SOURCE="$candidate"
+                break
+            fi
+        done
     fi
 
-    if [[ ! -f "$source_dir/RGBController/RGBController.cpp" ]]; then
-        if ! command -v tar >/dev/null 2>&1; then
-            printf 'tar is required to extract the OpenRGB release source.\n' >&2
+    # Finally, use or download the requested release tag.
+    if [[ -z "$OPENRGB_SOURCE" ]]; then
+        if [[ -z "$OPENRGB_TAG" ]]; then
+            printf 'Set OPENRGB_SOURCE, prepare the matching source under rpmbuild/BUILD, or set OPENRGB_TAG.\n' >&2
             exit 2
         fi
-        mkdir -p "$source_dir"
-        if ! tar -tzf "$archive" >/dev/null; then
-            printf 'Invalid OpenRGB source archive: %s\n' "$archive" >&2
-            exit 2
+
+        source_cache="$SCRIPT_DIR/build/openrgb-source"
+        source_dir="$source_cache/OpenRGB-$OPENRGB_TAG"
+        archive="$source_cache/OpenRGB-$OPENRGB_TAG.tar.gz"
+        mkdir -p "$source_cache"
+
+        if [[ ! -f "$archive" ]]; then
+            if ! command -v curl >/dev/null 2>&1; then
+                printf 'curl is required to download the OpenRGB release source.\n' >&2
+                exit 2
+            fi
+            curl --fail --location --retry 3 \
+                --output "$archive.part" \
+                "https://gitlab.com/CalcProgrammer1/OpenRGB/-/archive/$OPENRGB_TAG/OpenRGB-$OPENRGB_TAG.tar.gz"
+            mv "$archive.part" "$archive"
         fi
-        tar -xzf "$archive" --strip-components=1 -C "$source_dir"
+
+        if [[ ! -f "$source_dir/RGBController/RGBController.cpp" ]]; then
+            if ! command -v tar >/dev/null 2>&1; then
+                printf 'tar is required to extract the OpenRGB release source.\n' >&2
+                exit 2
+            fi
+            mkdir -p "$source_dir"
+            if ! tar -tzf "$archive" >/dev/null; then
+                printf 'Invalid OpenRGB source archive: %s\n' "$archive" >&2
+                exit 2
+            fi
+            tar -xzf "$archive" --strip-components=1 -C "$source_dir"
+        fi
+        OPENRGB_SOURCE="$source_dir"
     fi
-    OPENRGB_SOURCE="$source_dir"
 fi
 
 if [[ ! -f "$OPENRGB_SOURCE/RGBController/RGBController.cpp" ]]; then
     printf 'Set OPENRGB_SOURCE to the matching OpenRGB source tree.\n' >&2
     exit 2
 fi
+printf 'Using OpenRGB source: %s\n' "$OPENRGB_SOURCE"
 
 if [[ -z "${OPENRGB_VERSION:-}" ]]; then
     if [[ "$OPENRGB_TAG" == release_candidate_* ]]; then

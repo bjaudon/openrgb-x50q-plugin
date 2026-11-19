@@ -104,8 +104,10 @@ rpmbuild -bp --nodeps "$HOME/rpmbuild/SPECS/openrgb.spec"
 find "$HOME/rpmbuild/BUILD" -maxdepth 2 -type d -name 'OpenRGB-*' -print
 ```
 
-Point `OPENRGB_SOURCE` at the prepared `OpenRGB-*` directory. The build script
-uses `qmake-qt5` by default, detects the installed RPM version, reads the
+The build script searches `$HOME/rpmbuild/BUILD` for the prepared `OpenRGB-*`
+directory, then falls back to a source tree already cached in this project.
+Set `OPENRGB_SOURCE` explicitly to override discovery. The script uses
+`qmake-qt5` by default, detects the installed RPM version, reads the
 OpenRGB commit from the source checkout (or its directory name), and names the
 plugin with those target-build identifiers. For a source tree without Git
 metadata or a commit-bearing directory name, pass `OPENRGB_COMMIT` explicitly.
@@ -113,10 +115,6 @@ For a non-RPM OpenRGB build, pass `OPENRGB_VERSION` as well.
 
 ```bash
 cd /path/to/openrgb-x50q-plugin
-export OPENRGB_SOURCE="$(find "$HOME/rpmbuild/BUILD" -maxdepth 2 -type d -name 'OpenRGB-*' -print -quit)"
-test -f "$OPENRGB_SOURCE/RGBController/RGBController.cpp"
-printf 'Using OpenRGB source: %s\n' "$OPENRGB_SOURCE"
-qmake-qt5 -query QT_VERSION
 ./build.sh
 ```
 
